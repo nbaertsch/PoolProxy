@@ -80,13 +80,13 @@ With that problem out of the way, let's tackle...
 ## Capturing the return value
 This turned out to be a bit more complicated than expected, mostly due to my lack of foresight. See, my first attempt at this was to simply push the value of another label, `moremorecode`, before the jump so that the `ret` from our proxied function would return execution there and we could capture the resulting value in `rax`. The astute reader will notice that this completely defeats the purpose of proxying the function in the first place, since the address space of our malware is now dirtying up the stack (`picman` here is our example malware, lets pretend its unbacked memory).
 
-![[Malware Floaties - Capture rax dirty stack.png]]
+![Malware Floaties - Capture rax dirty stack.png](https://github.com/nbaertsch/PoolProxy/blob/main/img/Malware%20Floaties%20-%20Capture%20rax%20dirty%20stack.png)
 
 So what to do? Well, when we `jmp` to the proxied function call, we have a pointer to our struct in `rbx`. According to the [Windows x64 ABI](https://learn.microsoft.com/en-us/cpp/build/x64-software-conventions) , `rbx` is nonvolatile - we can safely assume that it will be unchanged after our function call. If we can find a gadget somewhere that moves `rax` into some offset of `[rbx]`, then we can push the address of said gadget to the stack instead of our sketchy malware. Bonus points here if the gadget resides in a system dll thats likely to be loaded, like `ntdll.dll`. 
 
 Enter `RtlPcToFileHeader`. The epilogue of this function is exactly what we need:
 
-![[Malware Floaties - RtlPsToFileHeader gadget.png]]
+![Malware Floaties - RtlPsToFileHeader gadget.png](https://github.com/nbaertsch/PoolProxy/blob/main/img/Malware%20Floaties%20-%20RtlPsToFileHeader%20gadget.png)
 
 You'll notice the `add rsp,40` and the `pop rbx`, both of these instructions work in our favor:
 - `rbx` is nonvolatile as we mentioned, so its probably best for our trampoline to have a prologue that pushes it to the stack any way (though this wasn't causing issue so far)
@@ -123,12 +123,10 @@ morecode:
 
 At the time of the proxied call, the stack looks like this:
 
-![[Malware Floaties - forged RtlPcToFileHeader stack frame.png]]
+![Malware Floaties - forged RtlPcToFileHeader stack frame.png](https://github.com/nbaertsch/PoolProxy/blob/main/img/Malware%20Floaties%20-%20forged%20RtlPcToFileHeader%20stack%20frame.png)
 
 When the proxied function `ret`s, it will execute the gadget which captures the return value in `[rbx]`, cleans up the stack frame, and `ret`s to `TpAllocPool`. 
 
 ## Now what?
 
-If you like nim, you can use [PoolProxy()] to start proxying functions through the thread pool today! You may want to be careful as there is an opportunity for race conditions between when you make the proxied function call and when you go to read the value from `[rbx]`. There are a couple ways around that, some more elegant than other's, but I will leave that as an exercise for you if you choose to implement something similar into your own malware.
-
-More here....?
+If you like nim, you can use [PoolProxy](https://github.com/nbaertsch/PoolProxy) to start proxying functions through the thread pool today! You may want to be careful as there is an opportunity for race conditions between when you make the proxied function call and when you go to read the value from `[rbx]`. There are a couple ways around that, some more elegant than other's, but I will leave that as an exercise for you if you choose to implement something similar into your own malware.
